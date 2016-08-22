@@ -103,6 +103,9 @@ ATTACHED_TO_VM = 'attached to VM'
 # Virtual machine power states
 VM_POWERED_OFF = "poweredOff"
 
+# Maximum number of PVSCSI targets
+PVSCSI_MAX_TARGETS = 16
+
 # Service instance provide from connection to local hostd
 si = None
 
@@ -623,6 +626,13 @@ def findDeviceByPath(vmdk_path, vm):
 
 # Find the PCI slot number
 def get_controller_pci_slot(vm, pvscsi, key_offset):
+    ''' Return PCI slot number of the given PVSCSI controller
+    Input parameters:
+    vm: VM configuration
+    pvscsi: given PVSCSI controller
+    key_offset: offset from the bus number, controller_key - key_offset
+    is equal to the slot number of this given PVSCSI controller
+    '''
     if pvscsi.slotInfo:
        return str(pvscsi.slotInfo.pciSlotNumber)
     else:
@@ -751,6 +761,9 @@ def handle_stale_attach(vmdk_path, kv_uuid):
 
 =======
 def add_pvscsi_controller(vm, controllers, max_scsi_controllers, offset_from_bus_number):
+    ''' 
+    Add a new PVSCSI controller, return (controller_key, err) pair
+    '''
     # find empty bus slot for the controller:
     taken = set([c.busNumber for c in controllers])
     avail = set(range(0, max_scsi_controllers)) - taken
@@ -778,6 +791,10 @@ def add_pvscsi_controller(vm, controllers, max_scsi_controllers, offset_from_bus
     return controller_key, None
 
 def find_disk_slot_in_controller(vm, devices, pvsci, idx, offset_from_bus_number):
+    '''
+    Find an empty disk slot in the given controller, return disk_slot if an empty slot
+    can be found, otherwise, return None
+    '''
     disk_slot = None
     controller_key = pvsci[idx].key
     taken = set([dev.unitNumber
@@ -785,7 +802,7 @@ def find_disk_slot_in_controller(vm, devices, pvsci, idx, offset_from_bus_number
              if type(dev) == vim.VirtualDisk and dev.controllerKey ==
              controller_key])
     # search in 15 slots, with unit_number 7 reserved for scsi controller
-    avail_slots = (set(range(0, 7)) | set(range(8, 16))) - taken
+    avail_slots = (set(range(0, 7)) | set(range(8, PVSCSI_MAX_TARGETS))) - taken
     logging.debug("idx=%d controller_key=%d avail_slots=%d", idx, controller_key, len(avail_slots))
 
     if len(avail_slots) != 0:
@@ -795,17 +812,20 @@ def find_disk_slot_in_controller(vm, devices, pvsci, idx, offset_from_bus_number
                  
         logging.debug("Find an available slot: controller_key = %d slot = %d", controller_key, disk_slot)
     else:
-        logging.debug("No available slot in this controller: controller_key = %d", controller_key)
+        logging.warning("No available slot in this controller: controller_key = %d", controller_key)
     return disk_slot        
 
 def find_available_disk_slot(vm, devices, pvsci, offset_from_bus_number):
-
+    '''
+    Iterate through all the existing PVSCSI controllers attached to a VM to find an empty
+    disk slot. Return disk_slot is an empty slot can be found, otherwise, return None
+    '''
     idx = 0
     disk_slot = None
     while ((disk_slot is None) and (idx < len(pvsci))):
             disk_slot = find_disk_slot_in_controller(vm, devices, pvsci, idx, offset_from_bus_number)
             if (disk_slot is None):
-                idx = idx+1;
+                idx = idx + 1;
     return idx, disk_slot            
             
 def disk_attach(vmdk_path, vm):
@@ -876,16 +896,16 @@ def disk_attach(vmdk_path, vm):
     if (disk_slot is None):
         disk_slot = 0  # starting on a fresh controller
         if len(controllers) >= max_scsi_controllers:
-            msg = "Failed to place new disk - out of disk slots due to no slot to add a new controller"
+            msg = "Failed to place new disk - out of disk slots and out of slots for new controllers"
             logging.error(msg + " VM=%s", vm.config.uuid)
             return err(msg)
 
-        logging.info("Trying to add one PVSCSI controller")
+        logging.info("Adding a PVSCSI controller")
         
         controller_key, ret_err = add_pvscsi_controller(vm, controllers, max_scsi_controllers, 
                                                         offset_from_bus_number)
 
-        if (ret_err is not None):
+        if (ret_err):
             return ret_err    
             
         # Find the controller just added
@@ -895,15 +915,9 @@ def disk_attach(vmdk_path, vm):
                  d.key == controller_key]
         pci_slot_number = get_controller_pci_slot(vm, pvsci[0],
                                                   offset_from_bus_number)
-        logging.debug("Added a PVSCSI controller, controller_key=%d pci_slot_number=%d",
+        logging.info("Added a PVSCSI controller, controller_key=%d pci_slot_number=%d",
                       controller_key, pci_slot_number)
-
-    # Find a slot on the controller, issue attach task and wait for completion
-    if disk_slot is None:
-       msg = "Failed to place new disk - out of disk slots"
-       logging.error(msg + " VM=%s", vm.config.uuid)
-       return err(msg)
-  
+    
     # add disk as independent, so it won't be snapshotted with the Docker VM
     disk_spec = vim.VirtualDeviceConfigSpec(
         operation='add',
