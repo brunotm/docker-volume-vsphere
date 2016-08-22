@@ -876,7 +876,7 @@ def disk_attach(vmdk_path, vm):
     if (disk_slot is None):
         disk_slot = 0  # starting on a fresh controller
         if len(controllers) >= max_scsi_controllers:
-            msg = "Failed to place new disk - out of disk slots"
+            msg = "Failed to place new disk - out of disk slots due to no slot to add a new controller"
             logging.error(msg + " VM=%s", vm.config.uuid)
             return err(msg)
 
