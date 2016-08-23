@@ -721,7 +721,6 @@ def getStatusAttached(vmdk_path):
         uuid = None
     return attached, uuid, attach_as
 
-<<<<<<< 5c74db18b272bb8c7cf8d4aadd0d999f18f673e0
 def handle_stale_attach(vmdk_path, kv_uuid):
        '''
        Clear volume state for cases where the VM that attached the disk
@@ -759,7 +758,6 @@ def handle_stale_attach(vmdk_path, kv_uuid):
           if ret:
              return ret
 
-=======
 def add_pvscsi_controller(vm, controllers, max_scsi_controllers, offset_from_bus_number):
     ''' 
     Add a new PVSCSI controller, return (controller_key, err) pair
@@ -841,9 +839,9 @@ def disk_attach(vmdk_path, vm):
     # If the volume is attached then check if the attach is stale (VM is powered off).
     # Otherwise, detach the disk from the VM it's attached to.
     if kv_status_attached and kv_uuid != vm.config.uuid:
-       err = handle_stale_attach(vmdk_path, kv_uuid)
-       if err:
-          return err
+       ret_err = handle_stale_attach(vmdk_path, kv_uuid)
+       if ret_err:
+          return ret_err
 
     # NOTE: vSphere is very picky about unit numbers and controllers of virtual
     # disks. Every controller supports 15 virtual disks, and the unit
@@ -896,7 +894,7 @@ def disk_attach(vmdk_path, vm):
     if (disk_slot is None):
         disk_slot = 0  # starting on a fresh controller
         if len(controllers) >= max_scsi_controllers:
-            msg = "Failed to place new disk - out of disk slots and out of slots for new controllers"
+            msg = "Failed to place new disk - The maximum number of supported volumes has been reached."
             logging.error(msg + " VM=%s", vm.config.uuid)
             return err(msg)
 
