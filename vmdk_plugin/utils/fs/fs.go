@@ -36,6 +36,8 @@ const pciAddrLen = 10                     // Length of PCI dev addr
 
 // FstypeDefault contains the default FS when not specified by the user
 const FstypeDefault = "ext4"
+// Search paths for filesystem utilities
+var BinSearchPaths = [4]string {"/bin", "/sbin", "/usr/bin", "/usr/sbin"}
 
 // VolumeDevSpec - volume spec returned from the server on an attach
 type VolumeDevSpec struct {
@@ -72,10 +74,13 @@ func Mkfs(mkfscmd string, label string, device string) error {
 
 // MkfsLookup finds existent filesystem tools
 func MkfsLookup() map[string]string {
-	mkftools, _ := filepath.Glob("/sbin/mkfs.*")
 	supportedFs := make(map[string]string)
-	for _, mkfs := range mkftools {
-		supportedFs[strings.Split(mkfs, ".")[1]] = mkfs
+
+	for _,sp := range BinSearchPaths {
+		mkftools, _ := filepath.Glob(sp+"/mkfs.*")
+		for _, mkfs := range mkftools {
+			supportedFs[strings.Split(mkfs, ".")[1]] = mkfs
+		}
 	}
 	return supportedFs
 }
