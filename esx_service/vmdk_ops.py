@@ -212,6 +212,10 @@ def make_create_cmd(opts, vmdk_path):
 def cloneVMDK(vm_name, vmdk_path, src_vmdk_path, opts={}):
     logging.info("*** cloneVMDK: %s opts = %s", vmdk_path, opts)
 
+    attached, uuid, attach_as = getStatusAttached(src_vmdk_path)
+    if attached:
+        return err("Source volume cannot be in use when cloning")
+
     if not kv.DISK_ALLOCATION_FORMAT in opts:
         disk_format = kv.DEFAULT_ALLOCATION_FORMAT
     else:
