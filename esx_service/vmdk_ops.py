@@ -288,7 +288,7 @@ def validate_opts(opts, vmdk_path):
     clone = True if kv.CLONE_FROM in opts else False
 
     if kv.SIZE in opts:
-        validate_size(opts[kv.SIZE])
+        validate_size(opts[kv.SIZE], clone)
     if kv.VSAN_POLICY_NAME in opts:
         validate_vsan_policy_name(opts[kv.VSAN_POLICY_NAME], vmdk_path)
     if kv.DISK_ALLOCATION_FORMAT in opts:
@@ -299,11 +299,14 @@ def validate_opts(opts, vmdk_path):
         validate_access(opts[kv.ACCESS])
 
 
-def validate_size(size):
+def validate_size(size, clone=False):
     """
     Ensure size is given in a human readable format <int><unit> where int is an
     integer and unit is either 'mb', 'gb', or 'tb'. e.g. 22mb
     """
+    if clone:
+        raise ValidationError("Cannot define size for a clone")
+
     if not size.lower().endswith(('kb', 'mb', 'gb', 'tb'
                                   )) or not size[:-2].isdigit():
         msg = ('Invalid format for size. \n'
