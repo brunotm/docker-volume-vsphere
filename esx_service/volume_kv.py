@@ -56,6 +56,7 @@ DEFAULT_DISK_SIZE = "100mb"
 # The disk allocation format for vmdk
 DISK_ALLOCATION_FORMAT = 'diskformat'
 VALID_ALLOCATION_FORMATS = ["zeroedthick", "thin", "eagerzeroedthick"]
+CLONE_ADD_ALLOCATION_FORMAT = "delta" # Additional allocation format for clones
 DEFAULT_ALLOCATION_FORMAT = 'thin'
 
 # attach type. Default is independent.
@@ -81,6 +82,10 @@ ACCESS_TYPES = [ACCESS_READWRITE, ACCESS_READONLY]
 # This option is handled in the volume-plugin at the docker host, and tracked in volume metadata. 
 FILESYSTEM_TYPE = 'fstype'
 DEFAULT_FILESYSTEM_TYPE = ''
+
+# Clone references
+CLONE_FROM = 'clone-from' # clone volume parent
+DEFAULT_CLONE_FROM = 'None'
 
 # Create a kv store object for this volume identified by vol_path
 # Create the side car or open if it exists.

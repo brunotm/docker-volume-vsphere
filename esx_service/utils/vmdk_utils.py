@@ -40,6 +40,9 @@ SPECIAL_FILES_REGEXP = r"\A.*-(delta|ctk|digest|flat)\.vmdk$"
 # glob expression to match end of 'delta' (aka snapshots) file names.
 SNAP_SUFFIX_GLOB = "-[0-9][0-9][0-9][0-9][0-9][0-9].vmdk"
 
+# regexp for finding datastore path "[datastore] path/to/file.vmdk" from full vmdk path
+DATASTORE_PATH_REGEXP = r"^/vmfs/volumes/([a-zA-Z0-9_-]+?)/(.*)"
+
 def init_datastoreCache():
     """
     Initializes the datastore cache with the list of datastores accessible from local ESX host.
@@ -149,6 +152,15 @@ def get_vmdk_path(path, vol_name):
     latest = sorted([(vmdk, os.stat(vmdk).st_ctime) for vmdk in delta_disks], key=lambda d: d[1], reverse=True)[0][0]
     logging.debug("The latest delta disk is %s. All delta disks: %s", latest, delta_disks)
     return latest
+
+
+def get_datastore_path(vmdk_path):
+    """Returns a string datastore path "[datastore] path/to/file.vmdk"
+    from a full vmdk path.
+    """
+    match = re.search(DATASTORE_PATH_REGEXP, vmdk_path)
+    datastore, path = match.groups()
+    return "[{0}] {1}".format(datastore, path)
 
 
 def list_vmdks(path, volname="", show_snapshots=False):

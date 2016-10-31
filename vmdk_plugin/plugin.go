@@ -241,6 +241,11 @@ func (d *vmdkDriver) Create(r volume.Request) volume.Response {
 		return volume.Response{Err: errCreate.Error()}
 	}
 
+	// If cloning a existent volume return
+	if _, result := r.Options["clone-from"]; result == true {
+		return volume.Response{Err: ""}
+	}
+
 	// Handle filesystem creation
 	log.WithFields(log.Fields{"name": r.Name,
 		"fstype": r.Options["fstype"]}).Info("Attaching volume and creating filesystem ")

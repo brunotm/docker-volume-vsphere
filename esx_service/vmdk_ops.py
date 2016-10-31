@@ -209,6 +209,53 @@ def make_create_cmd(opts, vmdk_path):
         return "{0} -d {1} -c {2} {3}".format(VMDK_CREATE_CMD, disk_format, size, vmdk_path)
 
 
+def cloneVMDK(vm_name, vmdk_path, src_vmdk_path, opts={}):
+    logging.info("*** cloneVMDK: %s opts = %s", vmdk_path, opts)
+
+    if not kv.DISK_ALLOCATION_FORMAT in opts:
+        disk_format = kv.DEFAULT_ALLOCATION_FORMAT
+    else:
+        disk_format = str(opts[kv.DISK_ALLOCATION_FORMAT])
+
+    # VirtualDiskSpec
+    vdisk_spec = vim.VirtualDiskManager.VirtualDiskSpec()
+    vdisk_spec.adapterType = 'busLogic'
+    vdisk_spec.diskType = disk_format
+
+    # Form datastore path from vmdk_path
+    dest_vol = vmdk_utils.get_datastore_path(vmdk_path)
+    source_vol = vmdk_utils.get_datastore_path(src_vmdk_path)
+
+    task = si.content.virtualDiskManager.CopyVirtualDisk(
+        sourceName=source_vol, destName=dest_vol, destSpec=vdisk_spec)
+    try:
+        wait_for_tasks(si, [task])
+    except vim.fault.VimFault as ex:
+        return err("Failed to clone volume: {0}".format(ex.msg))
+
+    # Update volume meta
+    src_vol_name = vmdk_utils.strip_vmdk_extension(src_vmdk_path.split("/")[-1])
+    vol_name = vmdk_utils.strip_vmdk_extension(src_vmdk_path.split("/")[-1])
+    vol_meta = kv.getAll(vmdk_path)
+    vol_meta[kv.CREATED_BY] = vm_name
+    vol_meta[kv.CREATED] = time.asctime(time.gmtime())
+    vol_meta[kv.VOL_OPTS][kv.CLONE_FROM] = src_vol_name
+    vol_meta[kv.VOL_OPTS][kv.DISK_ALLOCATION_FORMAT] = disk_format
+    if kv.ACCESS in opts:
+        vol_meta[kv.VOL_OPTS][kv.ACCESS] = opts[kv.ACCESS]
+    if kv.ATTACH_AS in opts:
+        vol_meta[kv.VOL_OPTS][kv.ATTACH_AS] = opts[kv.ATTACH_AS]
+
+    if not kv.setAll(vmdk_path, vol_meta):
+        msg = "Failed to create metadata kv store for {0}".format(vmdk_path)
+        logging.warning(msg)
+        removeVMDK(vmdk_path)
+        return err(msg)
+
+    backing, needs_cleanup = get_backing_device(vmdk_path)
+    cleanup_backing_device(backing, needs_cleanup)
+
+
 def create_kv_store(vm_name, vmdk_path, opts):
     """ Create the metadata kv store for a volume """
     vol_meta = {kv.STATUS: kv.DETACHED,
@@ -226,10 +273,10 @@ def validate_opts(opts, vmdk_path):
      * diskformat - The allocation format of allocated disk
     """
     valid_opts = [kv.SIZE, kv.VSAN_POLICY_NAME, kv.DISK_ALLOCATION_FORMAT,
-                kv.ATTACH_AS, kv.ACCESS, kv.FILESYSTEM_TYPE]
+                  kv.ATTACH_AS, kv.ACCESS, kv.FILESYSTEM_TYPE, kv.CLONE_FROM]
     defaults = [kv.DEFAULT_DISK_SIZE, kv.DEFAULT_VSAN_POLICY,\
                 kv.DEFAULT_ALLOCATION_FORMAT, kv.DEFAULT_ATTACH_AS,\
-                kv.DEFAULT_ACCESS, kv.DEFAULT_FILESYSTEM_TYPE]
+                kv.DEFAULT_ACCESS, kv.DEFAULT_FILESYSTEM_TYPE, kv.CLONE_FROM]
     invalid = frozenset(opts.keys()).difference(valid_opts)
     if len(invalid) != 0:
         msg = 'Invalid options: {0} \n'.format(list(invalid)) \
@@ -237,12 +284,15 @@ def validate_opts(opts, vmdk_path):
                + '{0}'.format(zip(list(valid_opts), defaults))
         raise ValidationError(msg)
 
+    # For validation of clone (in)compatible options
+    clone = True if kv.CLONE_FROM in opts else False
+
     if kv.SIZE in opts:
         validate_size(opts[kv.SIZE])
     if kv.VSAN_POLICY_NAME in opts:
         validate_vsan_policy_name(opts[kv.VSAN_POLICY_NAME], vmdk_path)
     if kv.DISK_ALLOCATION_FORMAT in opts:
-        validate_disk_allocation_format(opts[kv.DISK_ALLOCATION_FORMAT])
+        validate_disk_allocation_format(opts[kv.DISK_ALLOCATION_FORMAT], clone)
     if kv.ATTACH_AS in opts:
         validate_attach_as(opts[kv.ATTACH_AS])
     if kv.ACCESS in opts:
@@ -272,13 +322,20 @@ def validate_vsan_policy_name(policy_name, vmdk_path):
     if not vsan_policy.policy_exists(policy_name):
         raise ValidationError('Policy {0} does not exist'.format(policy_name))
 
-def validate_disk_allocation_format(alloc_format):
+def validate_disk_allocation_format(alloc_format, clone=False):
     """
     Ensure format is valid.
     """
+    if alloc_format == kv.CLONE_ADD_ALLOCATION_FORMAT and clone:
+        return
+    if alloc_format == kv.CLONE_ADD_ALLOCATION_FORMAT and not clone:
+        raise ValidationError("Disk Allocation Format \'{0}\' is only supported for clones.".format(
+                                alloc_format))
     if not alloc_format in kv.VALID_ALLOCATION_FORMATS :
         raise ValidationError("Disk Allocation Format \'{0}\' is not supported."
-                              " Valid options are: {1}".format(alloc_format, kv.VALID_ALLOCATION_FORMATS))
+                            " Valid options are: {1}, and optionally '{2}' for clones".format(
+                            alloc_format, kv.VALID_ALLOCATION_FORMATS,
+                            kv.CLONE_ADD_ALLOCATION_FORMAT))
 
 def validate_attach_as(attach_type):
     """
@@ -397,6 +454,10 @@ def vol_info(vol_meta, vol_size_info, datastore):
           vinfo[kv.ACCESS] = vol_meta[kv.VOL_OPTS][kv.ACCESS]
        else:
           vinfo[kv.ACCESS] = kv.DEFAULT_ACCESS
+       if kv.CLONE_FROM in vol_meta[kv.VOL_OPTS]:
+          vinfo[kv.CLONE_FROM] = vol_meta[kv.VOL_OPTS][kv.CLONE_FROM]
+       else:
+          vinfo[kv.CLONE_FROM] = kv.DEFAULT_CLONE_FROM
 
     return vinfo
 
@@ -489,7 +550,7 @@ def detachVMDK(vmdk_path, vm_uuid):
 def get_vol_path(datastore, tenant_name=None):
     # If the command is NOT running under a tenant, the folder for Docker
     # volumes is created on <datastore>/DOCK_VOLS_DIR
-    # If the command is running under a tenant, the foler for Dock volume
+    # If the command is running under a tenant, the folder for Dock volume
     # is created on <datastore>/DOCK_VOLS_DIR/tenant_name
     dock_vol_path = os.path.join("/vmfs/volumes", datastore, DOCK_VOLS_DIR)
     if tenant_name:
@@ -622,7 +683,25 @@ def executeRequest(vm_uuid, vm_name, config_path, cmd, full_vol_name, opts):
     if cmd == "get":
         response = getVMDK(vmdk_path, vol_name, datastore)
     elif cmd == "create":
-        response = createVMDK(vmdk_path, vm_name, vol_name, opts)
+        if kv.CLONE_FROM in opts:
+            try:
+                src_volume, src_datastore = parse_vol_name(opts["clone-from"])
+            except ValidationError as ex:
+                return err(str(ex))
+            if not src_datastore:
+                src_datastore = vm_datastore
+            elif src_datastore not in known_datastores():
+                return err("Invalid datastore '%s'.\n" \
+                           "Known datastores: %s.\n" \
+                            "Default datastore: %s" \
+                            % (datastore, ", ".join(known_datastores()), vm_datastore))
+            src_path = get_vol_path(src_datastore, tenant_name)
+            if src_path is None:
+                return err("Failed to initialize source volume path {0}".format(src_path))
+            src_vmdk_path = vmdk_utils.get_vmdk_path(src_path, src_volume)
+            response = cloneVMDK(vm_name, vmdk_path, src_vmdk_path, opts)
+        else:
+            response = createVMDK(vmdk_path, vm_name, vol_name, opts)
         # create succeed, insert infomation of this volume to volumes table
         if not response:
             if tenant_uuid:
