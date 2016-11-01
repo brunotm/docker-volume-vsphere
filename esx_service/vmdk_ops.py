@@ -211,6 +211,13 @@ def make_create_cmd(opts, vmdk_path):
 
 def cloneVMDK(vm_name, vmdk_path, src_vmdk_path, opts={}):
     logging.info("*** cloneVMDK: %s opts = %s", vmdk_path, opts)
+    if os.path.isfile(vmdk_path):
+        return err("File %s already exists" % vmdk_path)
+
+    try:
+        validate_opts(opts, vmdk_path)
+    except ValidationError as e:
+        return err(e.msg)
 
     attached, uuid, attach_as = getStatusAttached(src_vmdk_path)
     if attached:
@@ -301,6 +308,8 @@ def validate_opts(opts, vmdk_path):
         validate_attach_as(opts[kv.ATTACH_AS])
     if kv.ACCESS in opts:
         validate_access(opts[kv.ACCESS])
+    if kv.FILESYSTEM_TYPE in opts:
+        validate_fstype(opts[kv.FILESYSTEM_TYPE], clone)
 
 
 def validate_size(size, clone=False):
@@ -309,7 +318,7 @@ def validate_size(size, clone=False):
     integer and unit is either 'mb', 'gb', or 'tb'. e.g. 22mb
     """
     if clone:
-        raise ValidationError("Cannot define size for a clone")
+        raise ValidationError("Cannot define the size for a clone")
 
     if not size.lower().endswith(('kb', 'mb', 'gb', 'tb'
                                   )) or not size[:-2].isdigit():
@@ -360,6 +369,13 @@ def validate_access(access_type):
        raise ValidationError("Access type '{0}' is not supported."
                              " Valid options are: {1}".format(access_type,
                                                               kv.ACCESS_TYPES))
+
+def validate_fstype(fstype, clone):
+    """
+    Ensure that we don't accept fstype for a clone
+    """
+    if clone:
+        raise ValidationError("Cannot define the filesystem type for a clone")
 
 # Returns the UUID if the vmdk_path is for a VSAN backed.
 def get_vsan_uuid(vmdk_path):
