@@ -209,7 +209,7 @@ def make_create_cmd(opts, vmdk_path):
         return "{0} -d {1} -c {2} {3}".format(VMDK_CREATE_CMD, disk_format, size, vmdk_path)
 
 
-def cloneVMDK(vm_name, vmdk_path, src_vmdk_path, opts={}):
+def cloneVMDK(vm_name, vmdk_path, src_vmdk_path, opts={}, vm_uuid=None, vm_datastore=None):
     logging.info("*** cloneVMDK: %s opts = %s", vmdk_path, opts)
     if os.path.isfile(vmdk_path):
         return err("File %s already exists" % vmdk_path)
@@ -218,6 +218,14 @@ def cloneVMDK(vm_name, vmdk_path, src_vmdk_path, opts={}):
         validate_opts(opts, vmdk_path)
     except ValidationError as e:
         return err(e.msg)
+
+    # We need to authorize again with size info of the volume being cloned
+    if vm_uuid and vm_datastore:
+        src_vol_meta = kv.getAll(src_vmdk_path)
+        opts["size"] = src_vol_meta["size"]
+        error_info, tenant_uuid, tenant_name = auth.authorize(vm_uuid, vm_datastore, "create", opts)
+        if error_info:
+            return err(error_info)
 
     attached, uuid, attach_as = getStatusAttached(src_vmdk_path)
     if attached:
@@ -707,6 +715,7 @@ def executeRequest(vm_uuid, vm_name, config_path, cmd, full_vol_name, opts):
         response = getVMDK(vmdk_path, vol_name, datastore)
     elif cmd == "create":
         if kv.CLONE_FROM in opts:
+            # Get source volume path for cloning
             try:
                 src_volume, src_datastore = parse_vol_name(opts["clone-from"])
             except ValidationError as ex:
@@ -722,7 +731,7 @@ def executeRequest(vm_uuid, vm_name, config_path, cmd, full_vol_name, opts):
             if src_path is None:
                 return err("Failed to initialize source volume path {0}".format(src_path))
             src_vmdk_path = vmdk_utils.get_vmdk_path(src_path, src_volume)
-            response = cloneVMDK(vm_name, vmdk_path, src_vmdk_path, opts)
+            response = cloneVMDK(vm_name, vmdk_path, src_vmdk_path, opts, vm_uuid, vm_datastore)
         else:
             response = createVMDK(vmdk_path, vm_name, vol_name, opts)
         # create succeed, insert infomation of this volume to volumes table
