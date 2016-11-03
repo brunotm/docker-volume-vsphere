@@ -219,7 +219,7 @@ def cloneVMDK(vm_name, vmdk_path, src_vmdk_path, opts={}, vm_uuid=None, vm_datas
     except ValidationError as e:
         return err(e.msg)
 
-    # We need to authorize again with size info of the volume being cloned
+    # We need to reauthorize with size info of the volume being cloned
     if vm_uuid and vm_datastore:
         src_vol_meta = kv.getAll(src_vmdk_path)
         opts["size"] = src_vol_meta["size"]
@@ -245,6 +245,7 @@ def cloneVMDK(vm_name, vmdk_path, src_vmdk_path, opts={}, vm_uuid=None, vm_datas
     dest_vol = vmdk_utils.get_datastore_path(vmdk_path)
     source_vol = vmdk_utils.get_datastore_path(src_vmdk_path)
 
+    si = get_si()
     task = si.content.virtualDiskManager.CopyVirtualDisk(
         sourceName=source_vol, destName=dest_vol, destSpec=vdisk_spec)
     try:
