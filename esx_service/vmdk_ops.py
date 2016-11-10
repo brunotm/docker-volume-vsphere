@@ -159,7 +159,7 @@ def RunCommand(cmd):
 # returns error, or None for OK
 # opts is  dictionary of {option: value}.
 # for now we care about size and (maybe) policy
-def createVMDK(vmdk_path, vm_name, vol_name, opts={}):
+def createVMDK(vmdk_path, vm_name, vol_name, opts={}, vm_uuid=None, vm_datastore=None):
     logging.info("*** createVMDK: %s opts = %s", vmdk_path, opts)
     if os.path.isfile(vmdk_path):
         return err("File %s already exists" % vmdk_path)
@@ -168,6 +168,10 @@ def createVMDK(vmdk_path, vm_name, vol_name, opts={}):
         validate_opts(opts, vmdk_path)
     except ValidationError as e:
         return err(e.msg)
+
+    if kv.CLONE_FROM in opts:
+        return cloneVMDK(vm_name, vmdk_path, src_vmdk_path, opts,
+                         vm_uuid, vm_datastore)
 
     cmd = make_create_cmd(opts, vmdk_path)
     rc, out = RunCommand(cmd)
@@ -211,18 +215,32 @@ def make_create_cmd(opts, vmdk_path):
 
 def cloneVMDK(vm_name, vmdk_path, src_vmdk_path, opts={}, vm_uuid=None, vm_datastore=None):
     logging.info("*** cloneVMDK: %s opts = %s", vmdk_path, opts)
-    if os.path.isfile(vmdk_path):
-        return err("File %s already exists" % vmdk_path)
+
+    # Get source volume path for cloning
+    error_info, tenant_uuid, tenant_name = auth.get_tenant(vm_uuid)
+    if error_info:
+        return err(error_info)
 
     try:
-        validate_opts(opts, vmdk_path)
-    except ValidationError as e:
-        return err(e.msg)
+        src_volume, src_datastore = parse_vol_name(opts["clone-from"])
+    except ValidationError as ex:
+        return err(str(ex))
+    if not src_datastore:
+        src_datastore = vm_datastore
+    elif src_datastore not in known_datastores():
+        return err("Invalid datastore '%s'.\n" \
+                    "Known datastores: %s.\n" \
+                    "Default datastore: %s" \
+                    % (datastore, ", ".join(known_datastores()), vm_datastore))
+    src_path = get_vol_path(src_datastore, tenant_name)
+    if src_path is None:
+        return err("Failed to initialize source volume path {0}".format(src_path))
+    src_vmdk_path = vmdk_utils.get_vmdk_path(src_path, src_volume)
 
     # We need to reauthorize with size info of the volume being cloned
     if vm_uuid and vm_datastore:
-        src_vol_meta = kv.getAll(src_vmdk_path)
-        opts["size"] = src_vol_meta["size"]
+        src_vol_info = kv.get_vol_info(src_vmdk_path)
+        opts["size"] = src_vol_info["size"]
         error_info, tenant_uuid, tenant_name = auth.authorize(vm_uuid, vm_datastore, "create", opts)
         if error_info:
             return err(error_info)
