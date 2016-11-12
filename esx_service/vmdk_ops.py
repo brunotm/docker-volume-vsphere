@@ -170,7 +170,7 @@ def createVMDK(vmdk_path, vm_name, vol_name, opts={}, vm_uuid=None, vm_datastore
         return err(e.msg)
 
     if kv.CLONE_FROM in opts:
-        return cloneVMDK(vm_name, vmdk_path, src_vmdk_path, opts,
+        return cloneVMDK(vm_name, vmdk_path, opts,
                          vm_uuid, vm_datastore)
 
     cmd = make_create_cmd(opts, vmdk_path)
@@ -213,7 +213,7 @@ def make_create_cmd(opts, vmdk_path):
         return "{0} -d {1} -c {2} {3}".format(VMDK_CREATE_CMD, disk_format, size, vmdk_path)
 
 
-def cloneVMDK(vm_name, vmdk_path, src_vmdk_path, opts={}, vm_uuid=None, vm_datastore=None):
+def cloneVMDK(vm_name, vmdk_path, opts={}, vm_uuid=None, vm_datastore=None):
     logging.info("*** cloneVMDK: %s opts = %s", vmdk_path, opts)
 
     # Get source volume path for cloning
@@ -237,6 +237,12 @@ def cloneVMDK(vm_name, vmdk_path, src_vmdk_path, opts={}, vm_uuid=None, vm_datas
         return err("Failed to initialize source volume path {0}".format(src_path))
     src_vmdk_path = vmdk_utils.get_vmdk_path(src_path, src_volume)
 
+    # Verify if the source volume is in use.
+    attached, uuid, attach_as = getStatusAttached(src_vmdk_path)
+    if attached:
+        if handle_stale_attach(vmdk_path, kv_uuid):
+            return err("Source volume cannot be in use when cloning")
+
     # We need to reauthorize with size info of the volume being cloned
     if vm_uuid and vm_datastore:
         src_vol_info = kv.get_vol_info(src_vmdk_path)
@@ -245,10 +251,7 @@ def cloneVMDK(vm_name, vmdk_path, src_vmdk_path, opts={}, vm_uuid=None, vm_datas
         if error_info:
             return err(error_info)
 
-    attached, uuid, attach_as = getStatusAttached(src_vmdk_path)
-    if attached:
-        return err("Source volume cannot be in use when cloning")
-
+    # Handle the allocation format
     if not kv.DISK_ALLOCATION_FORMAT in opts:
         disk_format = kv.DEFAULT_ALLOCATION_FORMAT
     else:
@@ -733,26 +736,7 @@ def executeRequest(vm_uuid, vm_name, config_path, cmd, full_vol_name, opts):
     if cmd == "get":
         response = getVMDK(vmdk_path, vol_name, datastore)
     elif cmd == "create":
-        if kv.CLONE_FROM in opts:
-            # Get source volume path for cloning
-            try:
-                src_volume, src_datastore = parse_vol_name(opts["clone-from"])
-            except ValidationError as ex:
-                return err(str(ex))
-            if not src_datastore:
-                src_datastore = vm_datastore
-            elif src_datastore not in known_datastores():
-                return err("Invalid datastore '%s'.\n" \
-                           "Known datastores: %s.\n" \
-                            "Default datastore: %s" \
-                            % (datastore, ", ".join(known_datastores()), vm_datastore))
-            src_path = get_vol_path(src_datastore, tenant_name)
-            if src_path is None:
-                return err("Failed to initialize source volume path {0}".format(src_path))
-            src_vmdk_path = vmdk_utils.get_vmdk_path(src_path, src_volume)
-            response = cloneVMDK(vm_name, vmdk_path, src_vmdk_path, opts, vm_uuid, vm_datastore)
-        else:
-            response = createVMDK(vmdk_path, vm_name, vol_name, opts)
+        response = createVMDK(vmdk_path, vm_name, vol_name, opts, vm_uuid, vm_datastore)
         # create succeed, insert infomation of this volume to volumes table
         if not response:
             if tenant_uuid:
