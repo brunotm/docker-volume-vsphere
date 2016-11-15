@@ -41,7 +41,7 @@ SPECIAL_FILES_REGEXP = r"\A.*-(delta|ctk|digest|flat)\.vmdk$"
 SNAP_SUFFIX_GLOB = "-[0-9][0-9][0-9][0-9][0-9][0-9].vmdk"
 
 # regexp for finding datastore path "[datastore] path/to/file.vmdk" from full vmdk path
-DATASTORE_PATH_REGEXP = r"^/vmfs/volumes/([a-zA-Z0-9_-]+?)/(.*)"
+DATASTORE_PATH_REGEXP = r"^/vmfs/volumes/([^/]+)/(.*\.vmdk)$"
 
 def init_datastoreCache():
     """
