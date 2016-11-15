@@ -227,11 +227,11 @@ def cloneVMDK(vm_name, vmdk_path, opts={}, vm_uuid=None, vm_datastore=None):
         return err(str(ex))
     if not src_datastore:
         src_datastore = vm_datastore
-    elif src_datastore not in known_datastores():
+    elif not vmdk_utils.validate_datastore(src_datastore):
         return err("Invalid datastore '%s'.\n" \
                     "Known datastores: %s.\n" \
                     "Default datastore: %s" \
-                    % (datastore, ", ".join(known_datastores()), vm_datastore))
+                    % (datastore, ", ".join(get_datastore_names_list), src_datastore))
     src_path, errMsg = get_vol_path(src_datastore, tenant_name)
     if src_path is None:
         return err("Failed to initialize source volume path {0}: {1}".format(src_path, errMsg))
