@@ -334,7 +334,7 @@ def validate_opts(opts, vmdk_path):
     if kv.VSAN_POLICY_NAME in opts:
         validate_vsan_policy_name(opts[kv.VSAN_POLICY_NAME], vmdk_path)
     if kv.DISK_ALLOCATION_FORMAT in opts:
-        validate_disk_allocation_format(opts[kv.DISK_ALLOCATION_FORMAT], clone)
+        validate_disk_allocation_format(opts[kv.DISK_ALLOCATION_FORMAT])
     if kv.ATTACH_AS in opts:
         validate_attach_as(opts[kv.ATTACH_AS])
     if kv.ACCESS in opts:
@@ -369,20 +369,14 @@ def validate_vsan_policy_name(policy_name, vmdk_path):
     if not vsan_policy.policy_exists(policy_name):
         raise ValidationError('Policy {0} does not exist'.format(policy_name))
 
-def validate_disk_allocation_format(alloc_format, clone=False):
+def validate_disk_allocation_format(alloc_format):
     """
     Ensure format is valid.
     """
-    if alloc_format == kv.CLONE_ADD_ALLOCATION_FORMAT and clone:
-        return
-    if alloc_format == kv.CLONE_ADD_ALLOCATION_FORMAT and not clone:
-        raise ValidationError("Disk Allocation Format \'{0}\' is only supported for clones.".format(
-                                alloc_format))
     if not alloc_format in kv.VALID_ALLOCATION_FORMATS :
         raise ValidationError("Disk Allocation Format \'{0}\' is not supported."
-                            " Valid options are: {1}, and optionally '{2}' for clones".format(
-                            alloc_format, kv.VALID_ALLOCATION_FORMATS,
-                            kv.CLONE_ADD_ALLOCATION_FORMAT))
+                            " Valid options are: {1}.".format(
+                            alloc_format, kv.VALID_ALLOCATION_FORMATS))
 
 def validate_attach_as(attach_type):
     """
@@ -401,7 +395,7 @@ def validate_access(access_type):
                              " Valid options are: {1}".format(access_type,
                                                               kv.ACCESS_TYPES))
 
-def validate_fstype(fstype, clone):
+def validate_fstype(fstype, clone=False):
     """
     Ensure that we don't accept fstype for a clone
     """

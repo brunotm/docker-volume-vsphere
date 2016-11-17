@@ -56,7 +56,6 @@ DEFAULT_DISK_SIZE = "100mb"
 # The disk allocation format for vmdk
 DISK_ALLOCATION_FORMAT = 'diskformat'
 VALID_ALLOCATION_FORMATS = ["zeroedthick", "thin", "eagerzeroedthick"]
-CLONE_ADD_ALLOCATION_FORMAT = "delta" # Additional allocation format for clones
 DEFAULT_ALLOCATION_FORMAT = 'thin'
 
 # attach type. Default is independent.

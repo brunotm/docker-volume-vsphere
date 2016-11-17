@@ -85,8 +85,6 @@ class VmdkCreateRemoveTestCase(unittest.TestCase):
     invalid_access_opt = {u'acess': u'read-write'}
     valid_access_opt = {volume_kv.ACCESS: 'read-only'}
     invalid_attach_as_choice = {volume_kv.ATTACH_AS: u'persisten'}
-    invalid_diskformat_choice = {volume_kv.DISK_ALLOCATION_FORMAT: volume_kv.CLONE_ADD_ALLOCATION_FORMAT}
-    valid_diskformat_choice = {volume_kv.DISK_ALLOCATION_FORMAT: volume_kv.VALID_ALLOCATION_FORMATS[2]}
     invalid_attach_as_opt = {u'atach-as': u'persistent'}
     valid_attach_as_opt_1 = {volume_kv.ATTACH_AS: u'persistent'}
     valid_attach_as_opt_2 = {volume_kv.ATTACH_AS: u'independent_persistent'}
@@ -182,19 +180,6 @@ class VmdkCreateRemoveTestCase(unittest.TestCase):
         self.assertEqual(err, None, err)
 
         err = vmdk_ops.removeVMDK(self.name)
-        self.assertEqual(err, None, err)
-
-    def testDiskAllocationFormatOpts(self):
-        err = vmdk_ops.createVMDK(vm_name=self.vm_name,
-                                  vmdk_path=self.name,
-                                  vol_name=self.volName,
-                                  opts=self.invalid_diskformat_choice)
-        self.assertNotEqual(err, None, err)
-
-        err = vmdk_ops.createVMDK(vm_name=self.vm_name,
-                                  vmdk_path=self.name,
-                                  vol_name=self.volName,
-                                  opts=self.valid_diskformat_choice)
         self.assertEqual(err, None, err)
 
 
@@ -319,9 +304,7 @@ class VmdkCreateCloneRemoveTestCase(unittest.TestCase):
         err = vmdk_ops.createVMDK(vmdk_path=self.name2,
                                   vm_name=self.vm_name,
                                   vol_name=self.volName2,
-                                  opts={volume_kv.CLONE_FROM: self.volName1,
-                                        volume_kv.DISK_ALLOCATION_FORMAT:
-                                        volume_kv.CLONE_ADD_ALLOCATION_FORMAT},
+                                  opts={volume_kv.CLONE_FROM: self.volName1},
                                   vm_uuid=self.vm_uuid,
                                   vm_datastore=self.vm_datastore)
         self.assertEqual(err, None, err)
@@ -329,9 +312,7 @@ class VmdkCreateCloneRemoveTestCase(unittest.TestCase):
         err = vmdk_ops.createVMDK(vmdk_path=self.name3,
                                   vm_name=self.vm_name,
                                   vol_name=self.volName3,
-                                  opts={volume_kv.CLONE_FROM: self.volName2,
-                                        volume_kv.DISK_ALLOCATION_FORMAT:
-                                        volume_kv.CLONE_ADD_ALLOCATION_FORMAT},
+                                  opts={volume_kv.CLONE_FROM: self.volName2},
                                   vm_uuid=self.vm_uuid,
                                   vm_datastore=self.vm_datastore)
         self.assertEqual(err, None, err)
