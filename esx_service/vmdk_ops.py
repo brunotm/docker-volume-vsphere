@@ -222,7 +222,7 @@ def cloneVMDK(vm_name, vmdk_path, opts={}, vm_uuid=None, vm_datastore=None):
         return err(error_info)
 
     try:
-        src_volume, src_datastore = parse_vol_name(opts["clone-from"])
+        src_volume, src_datastore = parse_vol_name(opts[kv.CLONE_FROM])
     except ValidationError as ex:
         return err(str(ex))
     if not src_datastore:
@@ -231,57 +231,68 @@ def cloneVMDK(vm_name, vmdk_path, opts={}, vm_uuid=None, vm_datastore=None):
         return err("Invalid datastore '%s'.\n" \
                     "Known datastores: %s.\n" \
                     "Default datastore: %s" \
-                    % (datastore, ", ".join(get_datastore_names_list), src_datastore))
+                    % (src_datastore, ", ".join(get_datastore_names_list), vm_datastore))
+
+    error_info, tenant_uuid, tenant_name = auth.authorize(vm_uuid,
+                                                          src_datastore, auth.CMD_ATTACH, {})
+    if error_info:
+        errmsg = "Failed to authorize VM: {0}, datastore: {1}".format(error_info, src_datastore)
+        logging.warning("*** cloneVMDK: %s", errmsg)
+        return err(errmsg)
+
     src_path, errMsg = get_vol_path(src_datastore, tenant_name)
     if src_path is None:
         return err("Failed to initialize source volume path {0}: {1}".format(src_path, errMsg))
 
     src_vmdk_path = vmdk_utils.get_vmdk_path(src_path, src_volume)
+    if not os.path.isfile(src_vmdk_path):
+        return err("Could not find volume for cloning %s" % opts[kv.CLONE_FROM])
 
-    # Verify if the source volume is in use.
-    attached, uuid, attach_as = getStatusAttached(src_vmdk_path)
-    if attached:
-        if handle_stale_attach(vmdk_path, kv_uuid):
-            return err("Source volume cannot be in use when cloning")
+    with lockManager.get_lock(src_volume):
+        # Verify if the source volume is in use.
+        attached, uuid, attach_as = getStatusAttached(src_vmdk_path)
+        if attached:
+            if handle_stale_attach(vmdk_path, kv_uuid):
+                return err("Source volume cannot be in use when cloning")
 
-    # We need to reauthorize with size info of the volume being cloned
-    if vm_uuid and vm_datastore:
+        # Reauthorize with size info of the volume being cloned
         src_vol_info = kv.get_vol_info(src_vmdk_path)
+        datastore = vmdk_utils.get_datastore_from_vmdk_path(vmdk_path)
         opts["size"] = src_vol_info["size"]
-        error_info, tenant_uuid, tenant_name = auth.authorize(vm_uuid, vm_datastore, "create", opts)
+        error_info, tenant_uuid, tenant_name = auth.authorize(vm_uuid,
+                                                              datastore, auth.CMD_CREATE, opts)
         if error_info:
             return err(error_info)
 
-    # Handle the allocation format
-    if not kv.DISK_ALLOCATION_FORMAT in opts:
-        disk_format = kv.DEFAULT_ALLOCATION_FORMAT
-    else:
-        disk_format = str(opts[kv.DISK_ALLOCATION_FORMAT])
+        # Handle the allocation format
+        if not kv.DISK_ALLOCATION_FORMAT in opts:
+            disk_format = kv.DEFAULT_ALLOCATION_FORMAT
+        else:
+            disk_format = str(opts[kv.DISK_ALLOCATION_FORMAT])
 
-    # VirtualDiskSpec
-    vdisk_spec = vim.VirtualDiskManager.VirtualDiskSpec()
-    vdisk_spec.adapterType = 'busLogic'
-    vdisk_spec.diskType = disk_format
+        # VirtualDiskSpec
+        vdisk_spec = vim.VirtualDiskManager.VirtualDiskSpec()
+        vdisk_spec.adapterType = 'busLogic'
+        vdisk_spec.diskType = disk_format
 
-    # Form datastore path from vmdk_path
-    dest_vol = vmdk_utils.get_datastore_path(vmdk_path)
-    source_vol = vmdk_utils.get_datastore_path(src_vmdk_path)
+        # Form datastore path from vmdk_path
+        dest_vol = vmdk_utils.get_datastore_path(vmdk_path)
+        source_vol = vmdk_utils.get_datastore_path(src_vmdk_path)
 
-    si = get_si()
-    task = si.content.virtualDiskManager.CopyVirtualDisk(
-        sourceName=source_vol, destName=dest_vol, destSpec=vdisk_spec)
-    try:
-        wait_for_tasks(si, [task])
-    except vim.fault.VimFault as ex:
-        return err("Failed to clone volume: {0}".format(ex.msg))
+        si = get_si()
+        task = si.content.virtualDiskManager.CopyVirtualDisk(
+            sourceName=source_vol, destName=dest_vol, destSpec=vdisk_spec)
+        try:
+            wait_for_tasks(si, [task])
+        except vim.fault.VimFault as ex:
+            return err("Failed to clone volume: {0}".format(ex.msg))
 
     # Update volume meta
-    src_vol_name = vmdk_utils.strip_vmdk_extension(src_vmdk_path.split("/")[-1])
     vol_name = vmdk_utils.strip_vmdk_extension(src_vmdk_path.split("/")[-1])
     vol_meta = kv.getAll(vmdk_path)
     vol_meta[kv.CREATED_BY] = vm_name
     vol_meta[kv.CREATED] = time.asctime(time.gmtime())
-    vol_meta[kv.VOL_OPTS][kv.CLONE_FROM] = src_vol_name
+    vol_meta[kv.VOL_OPTS][kv.CLONE_FROM] = src_volume
     vol_meta[kv.VOL_OPTS][kv.DISK_ALLOCATION_FORMAT] = disk_format
     if kv.ACCESS in opts:
         vol_meta[kv.VOL_OPTS][kv.ACCESS] = opts[kv.ACCESS]

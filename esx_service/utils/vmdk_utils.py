@@ -162,6 +162,12 @@ def get_datastore_path(vmdk_path):
     datastore, path = match.groups()
     return "[{0}] {1}".format(datastore, path)
 
+def get_datastore_from_vmdk_path(vmdk_path):
+    """Returns a string representing the datastore from a full vmdk path.
+    """
+    match = re.search(DATASTORE_PATH_REGEXP, vmdk_path)
+    datastore, path = match.groups()
+    return datastore
 
 def list_vmdks(path, volname="", show_snapshots=False):
     """ Return a list of VMDKs in a given path. Filters out non-descriptor
