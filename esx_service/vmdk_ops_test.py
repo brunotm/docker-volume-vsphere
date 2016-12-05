@@ -219,6 +219,8 @@ class VmdkCreateRemoveTestCase(unittest.TestCase):
         self.assertNotEqual(None, vsan_policy.update('good', 'blah'))
         self.assertFalse(os.path.isfile(backup_policy_file))
 
+        err = vmdk_ops.removeVMDK(vmdk_path)
+        self.assertEqual(err, None, err)
 
     @unittest.skipIf(not vsan_info.get_vsan_datastore(),
                     "VSAN is not found - skipping vsan_info tests")
