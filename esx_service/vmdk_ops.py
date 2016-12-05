@@ -200,8 +200,8 @@ def createVMDK(vmdk_path, vm_name, vol_name, opts={}, vm_uuid=None, tenant_uuid=
     # Handle vsan policy
     if kv.VSAN_POLICY_NAME in opts:
         if not vsan_policy.set_policy_by_name(vmdk_path, opts[kv.VSAN_POLICY_NAME]):
-            logging.error("Could not set policy: %s to volume %s",
-                          opts[kv.VSAN_POLICY_NAME], vmdk_path)
+            # Drop the failed option
+            # A warning is being logged in the called functions
             del opts[kv.VSAN_POLICY_NAME]
 
     if not create_kv_store(vm_name, vmdk_path, opts):
@@ -306,8 +306,8 @@ def cloneVMDK(vm_name, vmdk_path, opts={}, vm_uuid=None, vm_datastore=None):
     # Handle vsan policy
     if kv.VSAN_POLICY_NAME in opts:
         if not vsan_policy.set_policy_by_name(vmdk_path, opts[kv.VSAN_POLICY_NAME]):
-            logging.error("Could not set policy: %s to volume %s",
-                          opts[kv.VSAN_POLICY_NAME], vmdk_path)
+            # Drop the failed option
+            # A warning is being logged in the called functions
             del opts[kv.VSAN_POLICY_NAME]
 
     # Update volume meta
