@@ -30,6 +30,7 @@ import (
 	"github.com/docker/engine-api/types/container"
 	"github.com/docker/engine-api/types/filters"
 	"github.com/docker/engine-api/types/strslice"
+	"github.com/vmware/docker-volume-vsphere/vmdk_plugin/utils"
 	"github.com/vmware/docker-volume-vsphere/vmdk_plugin/utils/config"
 	"golang.org/x/net/context"
 )
@@ -243,9 +244,9 @@ func TestSanity(t *testing.T) {
 }
 
 // Test concurrent volume operations
-// - concurrent create/delete btween different docker hosts
-// - concurrent clone/delete btween different docker hosts
+// - concurrent create/delete between different docker hosts
 // - concurrent create/delete on the same docker host
+// - concurrent clone/delete between different docker hosts
 func TestConcurrency(t *testing.T) {
 
 	clients := getClients(t)
@@ -265,25 +266,52 @@ func TestConcurrency(t *testing.T) {
 		},
 	}
 
-	fmt.Printf("Running create/delete concurrent test...\n")
-	// Create/delete goroutine
-	for idx, elem := range clients {
+	// Only run this if testing against different clients
+	if clients[0].endPoint != clients[1].endPoint {
+		fmt.Printf("Running create/delete concurrent test...\n")
+		// Create/delete goroutine
+		for idx, elem := range clients {
+			go func(idx int, c *client.Client) {
+				for i := 0; i < parallelVolumes; i++ {
+					volName := volumeName + strconv.Itoa(idx) + strconv.Itoa(i)
+					createRequest.Name = volName
+					_, err := c.VolumeCreate(context.Background(), createRequest)
+					results <- err
+					err = c.VolumeRemove(context.Background(), volName)
+					results <- err
+				}
+			}(idx, elem.client)
+		}
+		// Read the results from the channel
+		for i := 0; i < len(clients)*parallelVolumes*2; i++ {
+			err := <-results
+			if err != nil {
+				t.Fatalf("Create/delete concurrent test failed, err: %v", err)
+			}
+		}
+	} else {
+		fmt.Printf("Skipping create/delete concurrent test, same docker host. Will be tested next.\n")
+	}
+
+	fmt.Printf("Running same docker host concurrent create/delete test on %s...\n", clients[0].endPoint)
+	parallelVolumes1 := parallelVolumes / 2
+	for idx := 0; idx < 3; idx++ {
 		go func(idx int, c *client.Client) {
-			for i := 0; i < parallelVolumes; i++ {
-				volName := volumeName + strconv.Itoa(idx) + strconv.Itoa(i)
+			for i := 0; i < parallelVolumes1; i++ {
+				volName := volumeName + "-same" + strconv.Itoa(idx) + strconv.Itoa(i)
 				createRequest.Name = volName
 				_, err := c.VolumeCreate(context.Background(), createRequest)
 				results <- err
 				err = c.VolumeRemove(context.Background(), volName)
 				results <- err
 			}
-		}(idx, elem.client)
+		}(idx, clients[0].client)
 	}
-	// // Read the results from the channel
-	for i := 0; i < len(clients)*parallelVolumes*2; i++ {
+	// Read the results from the channel
+	for i := 0; i < 3*parallelVolumes1*2; i++ {
 		err := <-results
 		if err != nil {
-			t.Fatalf("Create/delete concurrent test failed, err: %v", err)
+			t.Fatalf("Same docker host concurrent create/delete test failed, err: %v", err)
 		}
 	}
 
@@ -292,7 +320,6 @@ func TestConcurrency(t *testing.T) {
 
 	// Create master volume for cloning
 	createRequest.Name = masterVolName
-	createRequest.DriverOpts["size"] = "1gb"
 
 	_, err := clients[0].client.VolumeCreate(context.Background(), createRequest)
 	if err != nil {
@@ -338,5 +365,4 @@ func TestConcurrency(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
 }
