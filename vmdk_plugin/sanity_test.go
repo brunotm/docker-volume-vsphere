@@ -30,7 +30,6 @@ import (
 	"github.com/docker/engine-api/types/container"
 	"github.com/docker/engine-api/types/filters"
 	"github.com/docker/engine-api/types/strslice"
-	"github.com/vmware/docker-volume-vsphere/vmdk_plugin/utils"
 	"github.com/vmware/docker-volume-vsphere/vmdk_plugin/utils/config"
 	"golang.org/x/net/context"
 )
@@ -249,8 +248,11 @@ func TestSanity(t *testing.T) {
 // - concurrent create/delete on the same docker host
 func TestConcurrency(t *testing.T) {
 
-	volumeName := "volTestP"
 	clients := getClients(t)
+	volumeName := "volTestP"
+
+	fmt.Printf("Running concurrent tests on %s and %s (may take a while)...\n",
+		clients[0].endPoint, clients[1].endPoint)
 
 	// Buffered channel to read results from
 	results := make(chan error, parallelVolumes)
@@ -263,8 +265,7 @@ func TestConcurrency(t *testing.T) {
 		},
 	}
 
-	fmt.Printf("Running create/delete parallel tests on %s and %s (may take a while)...\n",
-		clients[0].endPoint, clients[1].endPoint)
+	fmt.Printf("Running create/delete concurrent test...\n")
 	// Create/delete goroutine
 	for idx, elem := range clients {
 		go func(idx int, c *client.Client) {
@@ -278,11 +279,64 @@ func TestConcurrency(t *testing.T) {
 			}
 		}(idx, elem.client)
 	}
-	// We need to read #clients * #volumes * 2 operations from the channel
+	// // Read the results from the channel
 	for i := 0; i < len(clients)*parallelVolumes*2; i++ {
 		err := <-results
 		if err != nil {
-			t.Fatalf("Parallel test failed, err: %v", err)
+			t.Fatalf("Create/delete concurrent test failed, err: %v", err)
 		}
 	}
+
+	fmt.Printf("Running clone concurrent test...\n")
+	masterVolName := volumeName + "Clone"
+
+	// Create master volume for cloning
+	createRequest.Name = masterVolName
+	createRequest.DriverOpts["size"] = "1gb"
+
+	_, err := clients[0].client.VolumeCreate(context.Background(), createRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Remove size option for clone
+	delete(createRequest.DriverOpts, "size")
+
+	// Change diskformat for the 1st clones to produce waits
+	createRequest.DriverOpts["diskformat"] = "eagerzeroedthick"
+
+	// Clone goroutine
+	for idx, elem := range clients {
+		go func(idx int, c *client.Client) {
+			for i := 0; i < parallelClones; i++ {
+				volName := masterVolName + "-clone" + strconv.Itoa(idx) + strconv.Itoa(i)
+				createRequest.Name = volName
+				createRequest.DriverOpts["clone-from"] = masterVolName
+
+				// After 1st clone use thin diskformat
+				if i > 0 {
+					createRequest.DriverOpts["diskformat"] = "thin"
+				}
+				_, err := c.VolumeCreate(context.Background(), createRequest)
+				results <- err
+				err = c.VolumeRemove(context.Background(), volName)
+				results <- err
+			}
+		}(idx, elem.client)
+	}
+
+	// Read the results from the channel
+	for i := 0; i < len(clients)*parallelClones*2; i++ {
+		err := <-results
+		if err != nil {
+			t.Fatalf("Running clone concurrent test failed, err: %v", err)
+		}
+	}
+
+	// Remove the master volume
+	clients[0].client.VolumeRemove(context.Background(), masterVolName)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 }
