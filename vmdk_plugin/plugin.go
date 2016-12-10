@@ -65,8 +65,12 @@ func newVmdkDriver(useMockEsx bool) *vmdkDriver {
 		d = &vmdkDriver{
 			m:          &sync.Mutex{},
 			useMockEsx: false,
-			ops:        vmdkops.VmdkOps{Cmd: vmdkops.EsxVmdkCmd{}},
-			refCounts:  make(refCountsMap),
+			ops: vmdkops.VmdkOps{
+				Cmd: vmdkops.EsxVmdkCmd{
+					Mtx: &sync.Mutex{},
+				},
+			},
+			refCounts: make(refCountsMap),
 		}
 		d.refCounts.Init(d)
 	}
