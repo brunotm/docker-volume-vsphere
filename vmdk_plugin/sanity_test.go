@@ -21,7 +21,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"strconv"
 	"testing"
 
 	log "github.com/Sirupsen/logrus"
@@ -273,7 +272,7 @@ func TestConcurrency(t *testing.T) {
 		for idx, elem := range clients {
 			go func(idx int, c *client.Client) {
 				for i := 0; i < parallelVolumes; i++ {
-					volName := volumeName + strconv.Itoa(idx) + strconv.Itoa(i)
+					volName := fmt.Sprintf("%s%d%d", volumeName, idx, i)
 					createRequest.Name = volName
 					_, err := c.VolumeCreate(context.Background(), createRequest)
 					results <- err
@@ -298,7 +297,7 @@ func TestConcurrency(t *testing.T) {
 	for idx := 0; idx < 3; idx++ {
 		go func(idx int, c *client.Client) {
 			for i := 0; i < parallelVolumes1; i++ {
-				volName := volumeName + "-same" + strconv.Itoa(idx) + strconv.Itoa(i)
+				volName := fmt.Sprintf("%s-same%d%d", volumeName, idx, i)
 				createRequest.Name = volName
 				_, err := c.VolumeCreate(context.Background(), createRequest)
 				results <- err
@@ -336,7 +335,7 @@ func TestConcurrency(t *testing.T) {
 	for idx, elem := range clients {
 		go func(idx int, c *client.Client) {
 			for i := 0; i < parallelClones; i++ {
-				volName := masterVolName + "-clone" + strconv.Itoa(idx) + strconv.Itoa(i)
+				volName := fmt.Sprintf("%s-clone%d%d", masterVolName, idx, i)
 				createRequest.Name = volName
 				createRequest.DriverOpts["clone-from"] = masterVolName
 
