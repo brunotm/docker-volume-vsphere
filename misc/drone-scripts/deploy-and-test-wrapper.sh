@@ -35,6 +35,9 @@ export ESX=$1
 export VM1=$2
 export VM2=$3
 
+export IS_VSAN_TEST=$5
+[[ -z $IS_VSAN_TEST ]] && IS_VSAN_TEST='false'
+
 USER=root
 . ./misc/scripts/commands.sh
 . ./misc/drone-scripts/cleanup.sh

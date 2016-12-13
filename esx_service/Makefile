@@ -196,7 +196,7 @@ test-esx:
 	$(SCP) $(TEST_FILES) $(TO_ESX_BIN) $(TO_ESX_PY) root@$(ESX):$(TMP_LOC)
 	$(SSH) root@$(ESX) \
 		'for i in $(TMP_LOC)/$(TEST_PATTERN)_test.py ; \
-				do echo Running unit tests in $$i... ; python $$i ; \
+				do echo Running unit tests in $$i... ; IS_VSAN_TEST=$(IS_VSAN_TEST) python $$i; \
 				status=$$((status + $$?)) ;\
 		done; \
 		exit $$status'

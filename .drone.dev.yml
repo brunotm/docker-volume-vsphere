@@ -21,7 +21,7 @@ build:
     privileged: true
     environment:
     commands:
-      - ./misc/drone-scripts/deploy-and-test-wrapper.sh $$ESX $$VM1 $$VM2 $$BUILD_NUMBER < /dev/null
+      - ./misc/drone-scripts/deploy-and-test-wrapper.sh $$ESX $$VM1 $$VM2 $$BUILD_NUMBER $$IS_VSAN_TEST < /dev/null
 
 matrix:
   GO_VERSION:

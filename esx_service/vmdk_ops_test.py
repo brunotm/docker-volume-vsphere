@@ -48,8 +48,13 @@ config = {
     "run_max_attach": True
     }
 
-# will do creation/deletion in this folder:
-global path
+# will do creation/deletion in this datastore and path
+global DATASTORE
+global PATH
+
+# For tests that need to check if they are supposed to run on VSAN
+global IS_VSAN_TEST
+IS_VSAN_TEST = False
 
 class VolumeNamingTestCase(unittest.TestCase):
     """Unit test for operations with volume names (volume@datastore)"""
@@ -102,7 +107,7 @@ class VmdkCreateRemoveTestCase(unittest.TestCase):
     vm_name = 'test-vm'
 
     def setUp(self):
-        self.name = vmdk_utils.get_vmdk_path(path, self.volName)
+        self.name = vmdk_utils.get_vmdk_path(PATH, self.volName)
         self.policy_names = ['good', 'impossible']
         self.orig_policy_content = ('(("proportionalCapacity" i0) '
                                      '("hostFailuresToTolerate" i0))')
@@ -194,11 +199,9 @@ class VmdkCreateRemoveTestCase(unittest.TestCase):
         self.assertEqual(err, None, err)
 
 
-    @unittest.skipIf(not vsan_info.get_vsan_datastore(),
-                    "VSAN is not found - skipping vsan_info tests")
+    @unittest.skipIf(not IS_VSAN_TEST, "Not a VSAN test - skipping vsan_info tests")
     def testPolicyUpdate(self):
-        path = vsan_info.get_vsan_dockvols_path()
-        vmdk_path = vmdk_utils.get_vmdk_path(path, self.volName)
+        vmdk_path = vmdk_utils.get_vmdk_path(PATH, self.volName)
         err = vmdk_ops.createVMDK(vm_name=self.vm_name,
                                   vmdk_path=vmdk_path,
                                   vol_name=self.volName,
@@ -221,8 +224,7 @@ class VmdkCreateRemoveTestCase(unittest.TestCase):
         err = vmdk_ops.removeVMDK(vmdk_path)
         self.assertEqual(err, None, err)
 
-    @unittest.skipIf(not vsan_info.get_vsan_datastore(),
-                    "VSAN is not found - skipping vsan_info tests")
+    @unittest.skipIf(not IS_VSAN_TEST, "Not a VSAN test - skipping vsan_info tests")
     def testPolicy(self):
         # info for testPolicy
         testInfo = [
@@ -233,11 +235,11 @@ class VmdkCreateRemoveTestCase(unittest.TestCase):
             ["100mb", "impossible", True, "eagerzeroedthick"],
             ["100mb", "good", True, "thin"],
         ]
-        path = vsan_info.get_vsan_dockvols_path()
+
         i = 0
         for unit in testInfo:
             vol_name = '{0}{1}'.format(self.volName, i)
-            vmdk_path = vmdk_utils.get_vmdk_path(path,vol_name)
+            vmdk_path = vmdk_utils.get_vmdk_path(PATH, vol_name)
             i = i+1
             # create a volume with requests size/policy and check vs expected result
             err = vmdk_ops.createVMDK(vm_name=self.vm_name,
@@ -259,19 +261,10 @@ class VmdkCreateCloneRemoveTestCase(unittest.TestCase):
     volName1 = "vol_CloneTest_1"
     volName2 = "vol_CloneTest_2"
     volName3 = "vol_CloneTest_3"
-    vm_datastore = None
 
     def setUp(self):
-        if not self.vm_datastore:
-            datastore = vmdk_utils.get_datastores()[0]
-            if not datastore:
-                logging.error("Cannot find a valid datastore")
-                self.assertFalse(True)
-            self.vm_datastore = datastore[0]
-
-        path, err = vmdk_ops.get_vol_path(self.vm_datastore, auth.DEFAULT_TENANT)
+        path, err = vmdk_ops.get_vol_path(DATASTORE, auth.DEFAULT_TENANT)
         self.assertEqual(err, None, err)
-
         self.name = vmdk_utils.get_vmdk_path(path, self.volName)
         self.name1 = vmdk_utils.get_vmdk_path(path, self.volName1)
         self.name2 = vmdk_utils.get_vmdk_path(path, self.volName2)
@@ -290,7 +283,7 @@ class VmdkCreateCloneRemoveTestCase(unittest.TestCase):
                                   vol_name=self.volName1,
                                   opts=self.badOpts,
                                   vm_uuid=self.vm_uuid,
-                                  datastore=self.vm_datastore)
+                                  datastore=DATASTORE)
         self.assertNotEqual(err, None, err)
 
         err = vmdk_ops.removeVMDK(self.name1)
@@ -311,7 +304,7 @@ class VmdkCreateCloneRemoveTestCase(unittest.TestCase):
                                   vol_name=self.volName1,
                                   opts={volume_kv.CLONE_FROM: self.volName},
                                   vm_uuid=self.vm_uuid,
-                                  datastore=self.vm_datastore)
+                                  datastore=DATASTORE)
         self.assertEqual(err, None, err)
 
         err = vmdk_ops.createVMDK(vmdk_path=self.name2,
@@ -319,7 +312,7 @@ class VmdkCreateCloneRemoveTestCase(unittest.TestCase):
                                   vol_name=self.volName2,
                                   opts={volume_kv.CLONE_FROM: self.volName1},
                                   vm_uuid=self.vm_uuid,
-                                  datastore=self.vm_datastore)
+                                  datastore=DATASTORE)
         self.assertEqual(err, None, err)
 
         err = vmdk_ops.createVMDK(vmdk_path=self.name3,
@@ -327,7 +320,7 @@ class VmdkCreateCloneRemoveTestCase(unittest.TestCase):
                                   vol_name=self.volName3,
                                   opts={volume_kv.CLONE_FROM: self.volName2},
                                   vm_uuid=self.vm_uuid,
-                                  datastore=self.vm_datastore)
+                                  datastore=DATASTORE)
         self.assertEqual(err, None, err)
 
         err = vmdk_ops.removeVMDK(self.name)
@@ -342,18 +335,17 @@ class VmdkCreateCloneRemoveTestCase(unittest.TestCase):
         err = vmdk_ops.removeVMDK(self.name3)
         self.assertEqual(err, None, err)
 
+
 class ValidationTestCase(unittest.TestCase):
     """ Test validation of -o options on create """
 
-    @unittest.skipIf(not vsan_info.get_vsan_datastore(),
-                     "VSAN is not found - skipping vsan_info tests")
+    @unittest.skipIf(not IS_VSAN_TEST, "Not a VSAN test - skipping vsan_info tests")
 
     def setUp(self):
         """ Create a bunch of policies """
         self.policy_names = ['name1', 'name2', 'name3']
         self.policy_content = ('(("proportionalCapacity" i50) '
                                '("hostFailuresToTolerate" i0))')
-        self.path = vsan_info.get_vsan_datastore().info.url
         for n in self.policy_names:
             result = vsan_policy.create(n, self.policy_content)
             self.assertEqual(None, result,
@@ -374,11 +366,10 @@ class ValidationTestCase(unittest.TestCase):
             for p in self.policy_names:
                 for d in volume_kv.VALID_ALLOCATION_FORMATS:
                 # An exception should not be raised
-                    vmdk_ops.validate_opts({volume_kv.SIZE: s, volume_kv.VSAN_POLICY_NAME: p, volume_kv.DISK_ALLOCATION_FORMAT : d},
-                                       self.path)
-                    vmdk_ops.validate_opts({volume_kv.SIZE: s}, self.path)
-                    vmdk_ops.validate_opts({volume_kv.VSAN_POLICY_NAME: p}, self.path)
-                    vmdk_ops.validate_opts({volume_kv.DISK_ALLOCATION_FORMAT: d}, self.path)
+                    vmdk_ops.validate_opts({volume_kv.SIZE: s, volume_kv.VSAN_POLICY_NAME: p, volume_kv.DISK_ALLOCATION_FORMAT : d}, PATH)
+                    vmdk_ops.validate_opts({volume_kv.SIZE: s}, PATH)
+                    vmdk_ops.validate_opts({volume_kv.VSAN_POLICY_NAME: p}, PATH)
+                    vmdk_ops.validate_opts({volume_kv.DISK_ALLOCATION_FORMAT: d}, PATH)
 
     def test_failure(self):
         bad = [{volume_kv.SIZE: '2'}, {volume_kv.VSAN_POLICY_NAME: 'bad-policy'},
@@ -386,7 +377,7 @@ class ValidationTestCase(unittest.TestCase):
                                                              volume_kv.SIZE: '4mb'}]
         for opts in bad:
             with self.assertRaises(vmdk_ops.ValidationError):
-                vmdk_ops.validate_opts(opts, self.path)
+                vmdk_ops.validate_opts(opts, PATH)
 
 def create_vm(si, vm_name, datastore):
         """ Create a VM """
@@ -456,37 +447,24 @@ class VmdkAttachDetachTestCase(unittest.TestCase):
         max_vol_count = MAX_VOL_COUNT_FOR_ATTACH
     else:
         max_vol_count = 1
-    datastore_path = None
-    datastore_name = None
 
     def setUp(self):
         """ Setup run before each test """
-        logging.debug("VMDKAttachDetachTest setUp path =%s", path)
+        logging.debug("VMDKAttachDetachTest setUp path =%s", PATH)
         self.cleanup()
 
-        if (not self.datastore_name):
-            datastores = vmdk_utils.get_datastores()
-            datastore = datastores[0]
-            if (not datastore):
-                logging.error("Cannot find a valid datastore")
-                self.assertFalse(True)
-            self.datastore_name = datastore[0]
-            self.datastore_path = datastore[2]
-            logging.debug("datastore_name=%s datastore_path=%s", self.datastore_name,
-                                                                 self.datastore_path)   
-        
         # get service_instance, and create a VM
         si = vmdk_ops.get_si()
         error, self.vm = create_vm(si=si, 
                                    vm_name=self.vm_name, 
-                                   datastore=self.datastore_name)
+                                   datastore=DATASTORE)
         if error:
             self.assertFalse(True)
 
         # create max_vol_count+1 VMDK files
         for id in range(1, self.max_vol_count + 2):
             volName = 'VmdkAttachDetachTestVol' + str(id)
-            fullpath = os.path.join(self.datastore_path, volName + '.vmdk')
+            fullpath = vmdk_utils.get_vmdk_path(PATH, volName)
             self.assertEqual(None,
                                 vmdk_ops.createVMDK(vm_name=self.vm_name,
                                                     vmdk_path=fullpath,
@@ -526,7 +504,7 @@ class VmdkAttachDetachTestCase(unittest.TestCase):
         # attach max_vol_count disks
         for id in range(1, self.max_vol_count+1):
             volName = 'VmdkAttachDetachTestVol' + str(id)
-            fullpath = os.path.join(self.datastore_path, volName + '.vmdk')
+            fullpath = vmdk_utils.get_vmdk_path(PATH, volName)
             ret = vmdk_ops.disk_attach(vmdk_path=fullpath,
                                        vm=vm[0])
             logging.info("Returned '%s'", ret)
@@ -535,14 +513,14 @@ class VmdkAttachDetachTestCase(unittest.TestCase):
         if config["run_max_attach"]:
             # attach one more disk, which should fail    
             volName = 'VmdkAttachDetachTestVol' + str(self.max_vol_count+1)
-            fullpath = os.path.join(self.datastore_path, volName + '.vmdk')
+            fullpath = vmdk_utils.get_vmdk_path(PATH, volName)
             ret = vmdk_ops.disk_attach(vmdk_path=fullpath, vm=vm[0])
             self.assertTrue("Error" in ret)
 
         # detach all the attached disks
         for id in range(1, self.max_vol_count + 1):
             volName = 'VmdkAttachDetachTestVol' + str(id)
-            fullpath = os.path.join(self.datastore_path, volName + '.vmdk')
+            fullpath = vmdk_utils.get_vmdk_path(PATH, volName)
             ret = vmdk_ops.disk_detach(vmdk_path=fullpath,
                                        vm=vm[0])
             self.assertTrue(ret is None)
@@ -557,19 +535,7 @@ class VmdkAuthorizeTestCase(unittest.TestCase):
         
     def setUp(self):
         """ Setup run before each test """
-        logging.info("VMDKAuthorizeTest setUp path =%s", path)
-        if (not self.datastore_name):
-            datastores = vmdk_utils.get_datastores()
-            if datastores:
-                datastore = datastores[0]
-                self.datastore_name = datastore[0]
-                self.datastore_path = datastore[2]
-                logging.debug("datastore_name=%s datastore_path=%s", self.datastore_name,
-                                                                     self.datastore_path)
-            else:
-                logging.error("Cannot find a valid datastore")
-                self.assertFalse(True)
-
+        logging.info("VMDKAuthorizeTest setUp path =%s", PATH)
         self.auth_mgr = auth_data.AuthorizationDataManager()
         self.auth_mgr.connect()
 
@@ -585,7 +551,7 @@ class VmdkAuthorizeTestCase(unittest.TestCase):
              self.assertEqual(error_info, None)
 
     def tearDown(self):
-        logging.info("VMDKAuthorizeTest tearDown path =%s", path)
+        logging.info("VMDKAuthorizeTest tearDown path =%s", PATH)
         self.cleanup()
        
     def test_vmdkop_authorize(self):
@@ -680,7 +646,7 @@ class VmdkTenantTestCase(unittest.TestCase):
     tenant2_vol2_name = 'tenant2_vol2'
     tenant2_vol3_name = 'tenant2_vol3'
     vm2_config_path = None
-    
+
     datastore_name = None
     datastore_path = None
     datastore1_name = None
@@ -719,26 +685,12 @@ class VmdkTenantTestCase(unittest.TestCase):
     
     def setUp(self):
         """ Setup run before each test """
-        logging.info("VMDKTenantTest setUp path =%s", path)
-        
-        if (not self.datastore_name):
-            datastores = vmdk_utils.get_datastores()
-            if datastores:
-                datastore = datastores[0]
-                self.datastore_name = datastore[0]
-                self.datastore_path = datastore[2]
-                logging.debug("datastore_name=%s datastore_path=%s", self.datastore_name,
-                                                                     self.datastore_path)
-                if len(datastores) >= 1:
-                    datastore1 = datastores[1]
-                    self.datastore1_name = datastore1[0]
-                    self.datastoer1_path = datastore[2]
-                    logging.debug("Found second datastore: datastore_name=%s datastore_path=%s", 
-                                  self.datastore1_name, self.datastore1_path)
-            else:
-                logging.error("Cannot find a valid datastore")
-                self.assertFalse(True)
+        logging.info("VMDKTenantTest setUp path =%s", PATH)
 
+        if not self.datastore_name:
+            self.datastore_name = DATASTORE
+            self.datastore_path = "/vmfs/volumes/{0}".format(DATASTORE)
+        
         self.cleanup()
         # get service_instance, and create VMs
         si = vmdk_ops.get_si()
@@ -1184,28 +1136,47 @@ if __name__ == '__main__':
     log_config.configure()
     volume_kv.init()
 
-    # Calculate the path, use the first datastore in datastores
-    datastores = vmdk_utils.get_datastores()
-    path = datastores[0][2]
+    # Check if this is VSAN_TEST
+    if "IS_VSAN_TEST" in os.environ:
+        if os.environ["IS_VSAN_TEST"] == "true":
+            IS_VSAN_TEST=True
+        else:
+            IS_VSAN_TEST=False
+
+    if IS_VSAN_TEST:
+        datastore = vsan_info.get_vsan_datastore()
+        if not datastore:
+            msg = "ERROR VSAN Test Specified but VSAN datastore not found"
+            logging.info(msg)
+            sys.exit(msg)
+        DATASTORE = datastore.info.name
+        PATH = vsan_info.get_vsan_dockvols_path()
+        logging.info("Running tests on VSAN, datastore=%s, path=%s", DATASTORE, PATH)
+    else:
+        # Calculate the path, use the first datastore in datastores
+        datastores = vmdk_utils.get_datastores()
+        DATASTORE = datastores[0][0]
+        PATH = datastores[0][2]
+        logging.info("Running tests on VMFS, datastore=%s, path=%s", DATASTORE, PATH)
 
     def clean_path(path):
         if not path:
             logging.info("Directory clean up - empty dir passed")
             return
 
-        logging.info("Directory clean up - removing  %s", path)
+        logging.info("Directory clean up - removing  %s", PATH)
         try:
             # TODO: need to use osfs-rmdir on VSAN. For now jus yell if it failed
             os.removedirs(path)
         except Exception as e:
-            logging.warning("Directory clean up failed  -  %s, err: %s", path, e)
+            logging.warning("Directory clean up failed  -  %s, err: %s", PATH, e)
 
-    logging.info("Running tests. Directory used: %s", path)
+    logging.info("Running tests. Directory used: %s", PATH)
     try:
         unittest.main()
     except:
-        clean_path(path)
+        clean_path(PATH)
          # If the unittest failed, re-raise the error
         raise
 
-    clean_path(path)
+    clean_path(PATH)
