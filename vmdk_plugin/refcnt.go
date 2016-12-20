@@ -63,6 +63,11 @@
 // mountspoint of view the volume is not used, but the VMDK is still attached
 // to the VM) - we leave it to manual recovery.
 //
+// The refCountsMap is safe to be used by multiple goroutines and has a single
+// RWMutex to serialize operations on the map and refCounts.
+// The serialization of operations per volume is assured by the volume/store
+// of the docker daemon.
+//
 
 package main
 

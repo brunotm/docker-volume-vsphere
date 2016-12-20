@@ -343,6 +343,12 @@ func (d *vmdkDriver) Path(r volume.Request) volume.Response {
 
 // Provide a volume to docker container - called once per container start.
 // We need to keep refcount and unmount on refcount drop to 0
+//
+// The serialization of operations per volume is assured by the volume/store
+// of the docker daemon.
+// As long as the refCountsMap is protected is unnecessary to do any locking
+// at this level during create/mount/umount/remove.
+//
 func (d *vmdkDriver) Mount(r volume.MountRequest) volume.Response {
 	log.WithFields(log.Fields{"name": r.Name}).Info("Mounting volume ")
 
