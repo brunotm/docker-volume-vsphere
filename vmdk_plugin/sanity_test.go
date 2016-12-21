@@ -319,6 +319,7 @@ func TestConcurrency(t *testing.T) {
 
 	// Create master volume for cloning
 	createRequest.Name = masterVolName
+	createRequest.DriverOpts["size"] = "100mb"
 
 	_, err := clients[0].client.VolumeCreate(context.Background(), createRequest)
 	if err != nil {
